@@ -23,7 +23,6 @@ function setToken(value, how) {
   token = value;
   log(`取得授權（${how}）`, true);
   $("drive").disabled = false;
-  $("silent").disabled = false;
 }
 
 function randomState() {
@@ -146,6 +145,39 @@ $("drive").onclick = runDrive;
 $("silent").onclick = () => {
   if (!tokenClient) return log("免按同意續期", false, "Google 登入程式尚未載入");
   request("", "免按同意續期", "免按同意續期");
+};
+const store = {
+  get: (k) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* 僅本次有效 */ } },
+};
+for (const id of ["inboxUrl", "inboxSecret"]) {
+  $(id).value = store.get(`tv.${id}`);
+  $(id).onchange = () => store.set(`tv.${id}`, $(id).value.trim());
+}
+async function inbox(payload) {
+  const res = await fetch($("inboxUrl").value.trim(), {
+    method: "POST", redirect: "follow", headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret: $("inboxSecret").value.trim(), ...payload }),
+  });
+  return res.json();
+}
+$("inboxAdd").onclick = async () => {
+  try {
+    const r = await inbox({ url: "https://www.threads.com/@threads/post/PROBE", note: "App 寫入測試" });
+    log("App 寫入收件匣", r.ok === true, r.error ?? "");
+  } catch (e) { log("App 連線收件匣", false, e.message); }
+};
+$("inboxList").onclick = async () => {
+  try {
+    const r = await inbox({ action: "list" });
+    if (!r.ok) return log("讀取收件匣", false, r.error);
+    log("讀取收件匣", true, `${r.items.length} 筆`);
+    for (const i of r.items) log("收件", null, i.url.replace("https://www.", ""));
+    if (r.items.length) {
+      const a = await inbox({ action: "ack", ids: r.items.map((i) => i.id) });
+      log("標記完成", a.ok === true && a.done === r.items.length, `${a.done} 筆`);
+    }
+  } catch (e) { log("App 連線收件匣", false, e.message); }
 };
 $("copy").onclick = async () => {
   const text = entries.map((e) => `${e.ok === null ? "資訊" : e.ok ? "通過" : "失敗"} ${e.name} ${e.detail}`.trim()).join("\n");

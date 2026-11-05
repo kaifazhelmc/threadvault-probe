@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>脆藏測試</title>
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://www.googleapis.com https://accounts.google.com/gsi/ https://script.google.com https://script.googleusercontent.com; frame-src https://accounts.google.com/gsi/; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="脆藏測試">
 <link rel="manifest" href="manifest.webmanifest">
@@ -28,6 +28,7 @@ ol#log{list-style:none;margin:0;padding:0;font-size:14px}
 ol#log li{padding:5px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 ol#log li:last-child{border:0}
 .ok{color:var(--good);font-weight:700}.ng{color:var(--bad);font-weight:700}
+input{width:100%;padding:9px 10px;margin:2px 0 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit}
 #warn{color:var(--bad);font-weight:600}
 </style>
 </head>
@@ -45,7 +46,16 @@ ol#log li:last-child{border:0}
   <section>
     <h2>登入後的測試</h2>
     <button id="drive" disabled>測試 Drive 讀寫</button>
-    <button id="silent" disabled>測試免按同意續期</button>
+    <button id="silent">測試免按同意續期</button>
+  </section>
+  <section>
+    <h2>分享收件匣</h2>
+    <label class="muted" for="inboxUrl">Apps Script 網址</label>
+    <input id="inboxUrl" autocomplete="off" autocapitalize="none" spellcheck="false">
+    <label class="muted" for="inboxSecret">個人密鑰</label>
+    <input id="inboxSecret" autocomplete="off" autocapitalize="none" spellcheck="false">
+    <button id="inboxAdd">測試從 App 寫入</button>
+    <button id="inboxList">讀取並清空收件匣</button>
   </section>
   <section>
     <h2>測試結果</h2>
