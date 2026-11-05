@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>脆藏測試</title>
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="脆藏測試">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{--paper:#f2f5f3;--surface:#fff;--ink:#17282a;--muted:#566866;--line:#d4ddd9;--accent:#176b5b;--good:#176b5b;--bad:#b3362b;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--paper:#101716;--surface:#18211f;--ink:#e3ebe8;--muted:#97a9a5;--line:#2b3835;--accent:#62c7ac;--good:#62c7ac;--bad:#f07a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 "PingFang TC","Microsoft JhengHei UI",system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom))}
+main{max-width:520px;margin:auto}
+h1{font-size:22px;margin:4px 0 2px}
+p{margin:6px 0}
+.muted{color:var(--muted);font-size:14px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:12px 0}
+h2{font-size:16px;margin:0 0 6px}
+button{display:block;width:100%;margin:8px 0 0;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-weight:600}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+button:disabled{opacity:.5}
+ol#log{list-style:none;margin:0;padding:0;font-size:14px}
+ol#log li{padding:5px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+ol#log li:last-child{border:0}
+.ok{color:var(--good);font-weight:700}.ng{color:var(--bad);font-weight:700}
+#warn{color:var(--bad);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <h1>脆藏 iPhone 測試</h1>
+  <p class="muted">確認這支 iPhone 能否從主畫面 App 登入 Google。只會在 App 專屬空間建立並刪除一個測試檔，不會讀取你的 Drive 檔案。</p>
+  <p id="warn" hidden></p>
+  <section>
+    <h2>登入 Google</h2>
+    <p class="muted">先按方法 A。失敗或沒有反應時，再按方法 B。</p>
+    <button class="primary" id="popup">方法 A：彈出視窗登入</button>
+    <button id="redirect">方法 B：跳轉頁面登入</button>
+  </section>
+  <section>
+    <h2>登入後的測試</h2>
+    <button id="drive" disabled>測試 Drive 讀寫</button>
+    <button id="silent" disabled>測試免按同意續期</button>
+  </section>
+  <section>
+    <h2>測試結果</h2>
+    <ol id="log"></ol>
+    <button id="copy">複製測試結果</button>
+  </section>
+</main>
+<script src="config.js"></script>
+<script src="probe.js"></script>
+</body>
+</html>
