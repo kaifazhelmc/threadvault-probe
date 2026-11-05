@@ -1,1 +1,0 @@
-if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/threadvault-probe/app/sw.js', { scope: '/threadvault-probe/app/' })})}
