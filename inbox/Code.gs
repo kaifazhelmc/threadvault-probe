@@ -5,8 +5,59 @@
  */
 const MAX_BODY = 8192;
 const MAX_ROWS = 5000;
-const HEADERS = ['id', 'receivedAt', 'url', 'note', 'status'];
+const HEADERS = ['id', 'receivedAt', 'url', 'note', 'status', 'category', 'postUrl', 'handle', 'name', 'text'];
 const THREADS = /^https:\/\/(www\.)?threads\.(com|net)\/[^\s]+$/i;
+const POST = /^https:\/\/[^/]+\/@([^/?#]+)\/post\/([A-Za-z0-9_-]+)/;
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1';
+
+/** 在編輯器執行一次：完成授權，並確認 Google 伺服器讀得到 Threads 公開頁面。 */
+function testResolve() {
+  Logger.log(JSON.stringify(resolve_('https://www.threads.com/share/BAWaSF787o')));
+}
+
+function decode_(text) {
+  return text.replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCodePoint(parseInt(h, 16)); })
+    .replace(/&#(\d+);/g, function (_, d) { return String.fromCodePoint(Number(d)); })
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+function meta_(html, property) {
+  const tag = html.match(new RegExp('<meta[^>]+property="' + property + '"[^>]*>', 'i'));
+  const content = tag && tag[0].match(/content="([^"]*)"/i);
+  return content ? decode_(content[1]).replace(/\u2593/g, '').trim() : '';
+}
+
+/** 一篇公開貼文的短連結解析，只跟隨 Threads 網域內的轉址。失敗時回傳 null，收藏仍保留短連結。 */
+function resolve_(url) {
+  try {
+    let current = url;
+    for (let hop = 0; hop < 4; hop++) {
+      const res = UrlFetchApp.fetch(current, { followRedirects: false, muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
+      const code = res.getResponseCode();
+      if (code >= 300 && code < 400) {
+        const headers = res.getAllHeaders();
+        const next = headers.Location || headers.location;
+        if (!next) return null;
+        const target = next.charAt(0) === '/' ? 'https://www.threads.com' + next : next;
+        if (!THREADS.test(target)) return null;
+        current = target;
+        continue;
+      }
+      if (code !== 200) return null;
+      const html = res.getContentText();
+      const postUrl = meta_(html, 'og:url') || current;
+      const m = postUrl.match(POST);
+      if (!m) return null;
+      const handle = decodeURIComponent(m[1]);
+      const title = meta_(html, 'og:title').match(/^(?:Threads\s*上的\s*)?(.+?)\s*[（(]@([^）)]+)[）)]/);
+      return {
+        postUrl: 'https://www.threads.com/@' + m[1] + '/post/' + m[2], handle: handle,
+        name: title && title[2] === handle ? title[1] : '', text: meta_(html, 'og:description').slice(0, 5000),
+      };
+    }
+  } catch (err) { /* 保留短連結 */ }
+  return null;
+}
 
 function setup() {
   const props = PropertiesService.getScriptProperties();
@@ -59,9 +110,15 @@ function add_(body) {
   if (sheet.getLastRow() > MAX_ROWS) return reply_payload_('inbox_full');
   const id = Utilities.getUuid();
   const receivedAt = new Date().toISOString();
-  // 開頭加單引號，避免內容被試算表當成公式執行。
-  sheet.appendRow([id, receivedAt, "'" + url, "'" + String(body.note || '').slice(0, 2000), 'pending']);
-  return { ok: true, id: id, receivedAt: receivedAt };
+  // safe_ 在開頭加單引號，避免內容被試算表當成公式執行。
+  const post = resolve_(url) || {};
+  sheet.appendRow([id, receivedAt, safe_(url), safe_(String(body.note || '').slice(0, 2000)), 'pending',
+    safe_(String(body.category || '').slice(0, 100)), safe_(post.postUrl || ''), safe_(post.handle || ''), safe_(post.name || ''), safe_(post.text || '')]);
+  return { ok: true, id: id, receivedAt: receivedAt, resolved: !!post.postUrl };
+}
+
+function safe_(value) {
+  return value ? "'" + value : '';
 }
 
 function reply_payload_(error) {
@@ -71,7 +128,7 @@ function reply_payload_(error) {
 function list_() {
   const rows = inbox_().getDataRange().getDisplayValues().slice(1);
   const items = rows.filter(function (r) { return r[4] === 'pending'; })
-    .map(function (r) { return { id: r[0], receivedAt: r[1], url: r[2], note: r[3] }; });
+    .map(function (r) { return { id: r[0], receivedAt: r[1], url: r[2], note: r[3], category: r[5] || '', postUrl: r[6] || '', handle: r[7] || '', name: r[8] || '', text: r[9] || '' }; });
   return { ok: true, items: items };
 }
 
