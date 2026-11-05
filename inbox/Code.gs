@@ -8,11 +8,65 @@ const MAX_ROWS = 5000;
 const HEADERS = ['id', 'receivedAt', 'url', 'note', 'status', 'category', 'postUrl', 'handle', 'name', 'text'];
 const THREADS = /^https:\/\/(www\.)?threads\.(com|net)\/[^\s]+$/i;
 const POST = /^https:\/\/[^/]+\/@([^/?#]+)\/post\/([A-Za-z0-9_-]+)/;
+const MEDIA = /https:\/\/[^"'\s<>\\]*(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>\\]*/g;
+const IMAGE_HOST = /^https:\/\/[a-z0-9.-]+\.(?:cdninstagram\.com|fbcdn\.net)\//i;
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1';
 
 /** 在編輯器執行一次：完成授權，並確認 Google 伺服器讀得到 Threads 公開頁面。 */
 function testResolve() {
   Logger.log(JSON.stringify(resolve_('https://www.threads.com/share/BAWaSF787o')));
+}
+
+/** 在編輯器執行：把引號內換成一篇有圖貼文的連結，確認 Google 伺服器抓得到圖片。 */
+function testEmbed() {
+  const post = resolve_('把這裡換成一篇有圖貼文的分享連結');
+  if (!post) return Logger.log('resolve 失敗');
+  const res = UrlFetchApp.fetch(post.postUrl + '/embed', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
+  const html = res.getContentText();
+  const found = embedImages_(html);
+  Logger.log(JSON.stringify({
+    post: post.postUrl, hasText: !!post.text, code: res.getResponseCode(), size: html.length,
+    rendered: found.rendered, images: found.images.length,
+    sample: (html.match(MEDIA) || []).slice(0, 4).map(function (s) { return s.slice(0, 110); }),
+  }));
+}
+
+/** 嵌入頁的圖片網址。-19 是大頭貼，-15 是貼文圖片；同一張圖有多種尺寸，留最大的。 */
+function embedImages_(html) {
+  const clean = html.replace(/\\u0026/g, '&').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+  const all = clean.match(MEDIA) || [];
+  const best = {};
+  const order = [];
+  all.forEach(function (raw) {
+    const url = raw.replace(/[,;)]+$/, '');
+    if (!/\/t\d+\.\d+-15\//.test(url)) return;
+    const key = url.split('?')[0].split('/').pop();
+    const size = url.match(/[?_&](?:stp=[^&]*_)?[sp](\d+)x\d+/);
+    const width = size ? Number(size[1]) : 99999;
+    if (!best[key]) order.push(key);
+    if (!best[key] || width > best[key].width) best[key] = { url: url, width: width };
+  });
+  return { rendered: all.length > 0, images: order.slice(0, 20).map(function (k) { return best[k].url; }) };
+}
+
+function readPost_(target) {
+  if (!THREADS.test(target)) return { ok: false, error: 'bad_target' };
+  const post = resolve_(target);
+  if (!post) return { ok: false, error: 'unreadable' };
+  let found = { rendered: false, images: [] };
+  try {
+    const res = UrlFetchApp.fetch(post.postUrl + '/embed', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
+    if (res.getResponseCode() === 200) found = embedImages_(res.getContentText());
+  } catch (err) { /* 文字仍可使用 */ }
+  return { ok: true, postUrl: post.postUrl, handle: post.handle, name: post.name, text: post.text, rendered: found.rendered, images: found.images };
+}
+
+function readImage_(target) {
+  if (!IMAGE_HOST.test(target)) return { ok: false, error: 'bad_target' };
+  const res = UrlFetchApp.fetch(target, { muteHttpExceptions: true, headers: { 'User-Agent': UA } });
+  if (res.getResponseCode() !== 200) return { ok: false, error: 'image_' + res.getResponseCode() };
+  const blob = res.getBlob();
+  return { ok: true, type: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
 }
 
 function decode_(text) {
@@ -89,6 +143,9 @@ function doPost(e) {
     const body = JSON.parse(raw);
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return reply_({ ok: false, error: 'forbidden' });
+    // 這兩項只讀 Threads，不動試算表，不需要排隊。
+    if (body.action === 'readPost') return reply_(readPost_(String(body.target || '')));
+    if (body.action === 'readImage') return reply_(readImage_(String(body.target || '')));
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
