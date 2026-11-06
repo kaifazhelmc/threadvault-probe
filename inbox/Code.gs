@@ -17,18 +17,23 @@ function testResolve() {
   Logger.log(JSON.stringify(resolve_('https://www.threads.com/share/BAWaSF787o')));
 }
 
-/** 在編輯器執行：把引號內換成一篇有圖貼文的連結，確認 Google 伺服器抓得到圖片。 */
+/** 在編輯器執行：把引號內換成有圖、有影片的貼文連結，確認 Google 伺服器抓得到圖片與影片。 */
 function testEmbed() {
-  const post = resolve_('把這裡換成一篇有圖貼文的分享連結');
-  if (!post) return Logger.log('resolve 失敗');
-  const res = UrlFetchApp.fetch(post.postUrl + '/embed', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
-  const html = res.getContentText();
-  const found = embedImages_(html);
-  Logger.log(JSON.stringify({
-    post: post.postUrl, hasText: !!post.text, code: res.getResponseCode(), size: html.length,
-    rendered: found.rendered, images: found.images.length,
-    sample: (html.match(MEDIA) || []).slice(0, 4).map(function (s) { return s.slice(0, 110); }),
-  }));
+  ['把這裡換成一篇有圖貼文的分享連結', '把這裡換成一篇有影片貼文的分享連結'].forEach(function (link) {
+    const post = resolve_(link);
+    if (!post) return Logger.log('resolve 失敗：' + link.slice(0, 40));
+    const res = UrlFetchApp.fetch(post.postUrl + '/embed', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
+    const html = res.getContentText();
+    const clean = html.replace(/\\u0026/g, '&').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+    const found = embedImages_(html);
+    Logger.log(JSON.stringify({
+      post: post.postUrl, hasText: !!post.text, code: res.getResponseCode(), size: html.length,
+      rendered: found.rendered, images: found.images.length,
+      videoTags: (html.match(/<video/gi) || []).length,
+      videos: (clean.match(/https:[^"'\s<>\\]*\.mp4[^"'\s<>\\]*/gi) || []).length,
+      sample: (html.match(MEDIA) || []).slice(0, 3).map(function (s) { return s.slice(0, 110); }),
+    }));
+  });
 }
 
 /** 嵌入頁的圖片網址。-19 是大頭貼，-15 是貼文圖片；同一張圖有多種尺寸，留最大的。 */
