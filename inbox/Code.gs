@@ -247,7 +247,7 @@ function instagramPost_(url) {
 function parseInstagramEmbed_(html) {
   const author = html.match(/class="CaptionUsername"[^>]*>([^<]+)<\/a>([\s\S]*?)<\/div>/);
   const fallback = html.match(/class="Username"[^>]*>(?:<[^>]+>)*([A-Za-z0-9._]+)/);
-  const text = author ? decode_(author[2].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/\s*(更多|more)\s*$/i, '').trim() : '';
+  const text = author ? decode_(author[2].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/\s*(查看所有\s*[\d,]+\s*則留言|view all [\d,]+ comments)\s*$/i, '').replace(/\s*(更多|more)\s*$/i, '').trim() : '';
   const image = html.match(/<img[^>]*class="EmbeddedMediaImage"[^>]*>/);
   const src = image && image[0].match(/\ssrc="([^"]+)"/);
   return {
