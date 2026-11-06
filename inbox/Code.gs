@@ -7,6 +7,8 @@ const MAX_BODY = 8192;
 const MAX_ROWS = 5000;
 const HEADERS = ['id', 'receivedAt', 'url', 'note', 'status', 'category', 'postUrl', 'handle', 'name', 'text'];
 const THREADS = /^https:\/\/(www\.)?threads\.(com|net)\/[^\s]+$/i;
+const INSTAGRAM = /^https:\/\/(www\.|m\.)?instagram\.com\/[^\s]+$/i;
+const INSTAGRAM_POST = /^https:\/\/[^/]+\/(?:[A-Za-z0-9._]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i;
 const POST = /^https:\/\/[^/]+\/@([^/?#]+)\/post\/([A-Za-z0-9_-]+)/;
 const MEDIA = /https:\/\/[^"'\s<>\\]*(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>\\]*/g;
 const IMAGE_HOST = /^https:\/\/[a-z0-9.-]+\.(?:cdninstagram\.com|fbcdn\.net)\//i;
@@ -87,6 +89,11 @@ function readToken_() {
 }
 
 function readPost_(target) {
+  if (INSTAGRAM.test(target)) {
+    const shared = resolveInstagram_(target);
+    if (!shared || !shared.text) return { ok: false, error: 'unreadable' };
+    return { ok: true, postUrl: shared.postUrl, handle: shared.handle, name: shared.name, text: shared.text, rendered: false, images: [], videos: [], poster: '' };
+  }
   if (!THREADS.test(target)) return { ok: false, error: 'bad_target' };
   const post = resolve_(target);
   if (!post) return { ok: false, error: 'unreadable' };
@@ -205,15 +212,53 @@ function doPost(e) {
   }
 }
 
+/** 公開頁面才讀得到；被導向登入頁或沒有內文時回傳 null，收藏仍保留網址。 */
+function resolveInstagram_(url) {
+  try {
+    let current = url;
+    for (let hop = 0; hop < 4; hop++) {
+      const res = UrlFetchApp.fetch(current, { followRedirects: false, muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW,zh;q=0.9' } });
+      const code = res.getResponseCode();
+      if (code >= 300 && code < 400) {
+        const headers = res.getAllHeaders();
+        const next = headers.Location || headers.location;
+        if (!next) return null;
+        const target = next.charAt(0) === '/' ? 'https://www.instagram.com' + next : next;
+        if (!INSTAGRAM.test(target) || /\/accounts\/login/.test(target)) return null;
+        current = target;
+        continue;
+      }
+      return code === 200 ? parseInstagram_(res.getContentText(), current) : null;
+    }
+  } catch (err) { /* 取不到就只存網址 */ }
+  return null;
+}
+
+function parseInstagram_(html, current) {
+  const m = (meta_(html, 'og:url') || current).match(INSTAGRAM_POST) || current.match(INSTAGRAM_POST);
+  if (!m) return null;
+  const type = m[1] === 'reels' ? 'reel' : m[1];
+  const description = meta_(html, 'og:description');
+  const title = meta_(html, 'og:title');
+  const parts = description.match(/-\s*([A-Za-z0-9._]+)\s[^:：]*[:：]\s*["“「]([\s\S]*?)["”」]\s*\.?$/);
+  const named = title.match(/^(.+?)\s*(?:on Instagram|在 ?Instagram)[^:：]*[:：]\s*["“「]?([\s\S]*?)["”」]?$/);
+  return {
+    postUrl: 'https://www.instagram.com/' + type + '/' + m[2] + '/',
+    handle: parts ? parts[1] : '', name: named ? named[1] : '',
+    text: (parts ? parts[2] : named ? named[2] : '').slice(0, 5000), poster: '',
+  };
+}
+
 function add_(body) {
   const url = String(body.url || '').trim();
-  if (!THREADS.test(url)) return reply_payload_('not_threads');
+  const instagram = INSTAGRAM.test(url);
+  if (!THREADS.test(url) && !instagram) return reply_payload_('not_threads');
   const sheet = inbox_();
   if (sheet.getLastRow() > MAX_ROWS) return reply_payload_('inbox_full');
   const id = Utilities.getUuid();
   const receivedAt = new Date().toISOString();
   // safe_ 在開頭加單引號，避免內容被試算表當成公式執行。
-  const post = resolve_(url) || {};
+  const post = (instagram ? resolveInstagram_(url) : resolve_(url)) || {};
   sheet.appendRow([id, receivedAt, safe_(url), safe_(String(body.note || '').slice(0, 2000)), 'pending',
     safe_(String(body.category || '').slice(0, 100)), safe_(post.postUrl || ''), safe_(post.handle || ''), safe_(post.name || ''), safe_(post.text || '')]);
   return { ok: true, id: id, receivedAt: receivedAt, resolved: !!post.postUrl };
