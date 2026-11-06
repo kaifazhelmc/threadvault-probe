@@ -248,7 +248,7 @@ function instagramPost_(url) {
 /** 嵌入頁內含貼文資料：單篇是一筆，多圖貼文在 edge_sidecar_to_children。影片的 display_url 只是封面。 */
 function instagramMedia_(html) {
   let c = html;
-  for (let i = 0; i < 3; i++) c = c.replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+  for (let i = 0; i < 3; i++) c = c.replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\\//g, '/').replace(/\\u([0-9a-f]{4})/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); });
   const read = function (text) {
     const kind = text.match(/"is_video":(true|false)/);
     return { video: !!kind && kind[1] === 'true', display: (text.match(/"display_url":"([^"]+)"/) || [])[1], url: (text.match(/"video_url":"([^"]+)"/) || [])[1] };
