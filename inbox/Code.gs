@@ -79,6 +79,13 @@ function readChunk_(target, start) {
   return { ok: true, type: blob.getContentType(), total: range ? Number(range[1]) : bytes.length, data: Utilities.base64Encode(bytes) };
 }
 
+function readToken_() {
+  const token = ScriptApp.getOAuthToken();
+  const info = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(token), { muteHttpExceptions: true });
+  const left = info.getResponseCode() === 200 ? Number(JSON.parse(info.getContentText()).expires_in) || 0 : 0;
+  return { ok: true, token: token, expiresIn: left };
+}
+
 function readPost_(target) {
   if (!THREADS.test(target)) return { ok: false, error: 'bad_target' };
   const post = resolve_(target);
@@ -179,6 +186,8 @@ function doPost(e) {
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return reply_({ ok: false, error: 'forbidden' });
     // 這兩項只讀 Threads，不動試算表，不需要排隊。
+    // 手機網頁不能自己續期 Google 授權，由腳本代領；同一個 Cloud 專案，看得到脆藏的專屬空間。
+    if (body.action === 'readToken') return reply_(readToken_());
     if (body.action === 'readPost') return reply_(readPost_(String(body.target || '')));
     if (body.action === 'readImage') return reply_(readImage_(String(body.target || '')));
     if (body.action === 'readChunk') return reply_(readChunk_(String(body.target || ''), Math.max(0, Number(body.start) || 0)));
