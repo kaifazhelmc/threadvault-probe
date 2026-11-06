@@ -92,7 +92,7 @@ function readPost_(target) {
       videos = embedVideos_(res.getContentText());
     }
   } catch (err) { /* 文字仍可使用 */ }
-  return { ok: true, postUrl: post.postUrl, handle: post.handle, name: post.name, text: post.text, rendered: found.rendered, images: found.images, videos: videos };
+  return { ok: true, postUrl: post.postUrl, handle: post.handle, name: post.name, text: post.text, rendered: found.rendered, images: found.images, videos: videos, poster: post.poster };
 }
 
 function readImage_(target) {
@@ -141,6 +141,7 @@ function resolve_(url) {
       return {
         postUrl: 'https://www.threads.com/@' + m[1] + '/post/' + m[2], handle: handle,
         name: title && title[2] === handle ? title[1] : '', text: meta_(html, 'og:description').slice(0, 5000),
+        poster: /-15\//.test(meta_(html, 'og:image')) ? meta_(html, 'og:image') : '',
       };
     }
   } catch (err) { /* 保留短連結 */ }
