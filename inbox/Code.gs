@@ -92,7 +92,7 @@ function readPost_(target) {
   if (INSTAGRAM.test(target)) {
     const shared = resolveInstagram_(target);
     if (!shared || (!shared.text && !shared.handle)) return { ok: false, error: 'unreadable' };
-    return { ok: true, postUrl: shared.postUrl, handle: shared.handle, name: shared.name, text: shared.text, rendered: false, images: [], videos: [], poster: shared.poster };
+    return { ok: true, postUrl: shared.postUrl, handle: shared.handle, name: shared.name, text: shared.text, rendered: shared.rendered, images: shared.images, videos: shared.videos, poster: shared.poster };
   }
   if (!THREADS.test(target)) return { ok: false, error: 'bad_target' };
   const post = resolve_(target);
@@ -219,7 +219,8 @@ function resolveInstagram_(url) {
     if (!post) return null;
     const res = UrlFetchApp.fetch(post + 'embed/captioned/', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW,zh;q=0.9' } });
     const found = res.getResponseCode() === 200 ? parseInstagramEmbed_(res.getContentText()) : { handle: '', text: '', poster: '' };
-    return { postUrl: post, handle: found.handle, name: '', text: found.text, poster: found.poster };
+    const media = res.getResponseCode() === 200 ? instagramMedia_(res.getContentText()) : { rendered: false, images: [], videos: [], poster: '' };
+    return { postUrl: post, handle: found.handle, name: '', text: found.text, poster: media.poster || found.poster, rendered: media.rendered, images: media.images, videos: media.videos };
   } catch (err) {
     return null;
   }
@@ -242,6 +243,33 @@ function instagramPost_(url) {
     current = location;
   }
   return null;
+}
+
+/** 嵌入頁內含貼文資料：單篇是一筆，多圖貼文在 edge_sidecar_to_children。影片的 display_url 只是封面。 */
+function instagramMedia_(html) {
+  let c = html;
+  for (let i = 0; i < 3; i++) c = c.replace(/\\\\/g, '\\').replace(/\\"/g, '"').replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+  const read = function (text) {
+    const kind = text.match(/"is_video":(true|false)/);
+    return { video: !!kind && kind[1] === 'true', display: (text.match(/"display_url":"([^"]+)"/) || [])[1], url: (text.match(/"video_url":"([^"]+)"/) || [])[1] };
+  };
+  const main = c.indexOf('"shortcode_media"');
+  if (main < 0) return { rendered: false, images: [], videos: [], poster: '' };
+  const head = read(c.slice(main));
+  const at = c.indexOf('"edge_sidecar_to_children"', main);
+  const nodes = at < 0 ? [head] : c.slice(at).split('"node":{').slice(1).map(read).filter(function (n) { return n.display; });
+  const seen = {};
+  const once = function (u) {
+    const key = u.split('?')[0];
+    if (!u || seen[key]) return false;
+    seen[key] = true;
+    return true;
+  };
+  return {
+    rendered: true, poster: head.display || '',
+    images: nodes.filter(function (n) { return !n.video; }).map(function (n) { return n.display; }).filter(once).slice(0, 20),
+    videos: nodes.filter(function (n) { return n.video && n.url; }).map(function (n) { return n.url; }).filter(once).slice(0, 5),
+  };
 }
 
 function parseInstagramEmbed_(html) {
