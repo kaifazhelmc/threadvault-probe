@@ -220,7 +220,9 @@ function resolveInstagram_(url) {
     const res = UrlFetchApp.fetch(post + 'embed/captioned/', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW,zh;q=0.9' } });
     const found = res.getResponseCode() === 200 ? parseInstagramEmbed_(res.getContentText()) : { handle: '', text: '', poster: '' };
     const media = res.getResponseCode() === 200 ? instagramMedia_(res.getContentText()) : { rendered: false, images: [], videos: [], poster: '' };
-    return { postUrl: post, handle: found.handle, name: '', text: found.text, poster: media.poster || found.poster, rendered: media.rendered, images: media.images, videos: media.videos };
+    // 圖片貼文的嵌入頁沒有貼文資料，只有第一張圖；多圖貼文的其他張要登入才看得到。
+    const images = media.images.length || media.videos.length || !found.poster ? media.images : [found.poster];
+    return { postUrl: post, handle: found.handle, name: '', text: found.text, poster: media.poster || found.poster, rendered: media.rendered, images: images, videos: media.videos };
   } catch (err) {
     return null;
   }
@@ -277,10 +279,14 @@ function parseInstagramEmbed_(html) {
   const fallback = html.match(/class="Username"[^>]*>(?:<[^>]+>)*([A-Za-z0-9._]+)/);
   const text = author ? decode_(author[2].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/\s*(查看所有\s*[\d,]+\s*則留言|view all [\d,]+ comments)\s*$/i, '').replace(/\s*(更多|more)\s*$/i, '').trim() : '';
   const image = html.match(/<img[^>]*class="EmbeddedMediaImage"[^>]*>/);
-  const src = image && image[0].match(/\ssrc="([^"]+)"/);
+  const set = image && image[0].match(/\ssrcset="([^"]+)"/);
+  // srcset 列出多種尺寸，取最寬的；沒有 srcset 才用 src。
+  const largest = set ? set[1].split(',').map(function (p) { const b = p.trim().split(/\s+/); return { url: b[0], width: parseFloat(b[1]) || 0 }; })
+    .sort(function (a, b) { return b.width - a.width; })[0].url : '';
+  const src = image && !largest && image[0].match(/\ssrc="([^"]+)"/);
   return {
     handle: author ? decode_(author[1]).trim() : fallback ? fallback[1] : '',
-    text: text.slice(0, 5000), poster: src ? decode_(src[1]) : '',
+    text: text.slice(0, 5000), poster: largest ? decode_(largest) : src ? decode_(src[1]) : '',
   };
 }
 
