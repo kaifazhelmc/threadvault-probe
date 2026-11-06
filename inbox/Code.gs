@@ -91,8 +91,8 @@ function readToken_() {
 function readPost_(target) {
   if (INSTAGRAM.test(target)) {
     const shared = resolveInstagram_(target);
-    if (!shared || !shared.text) return { ok: false, error: 'unreadable' };
-    return { ok: true, postUrl: shared.postUrl, handle: shared.handle, name: shared.name, text: shared.text, rendered: false, images: [], videos: [], poster: '' };
+    if (!shared || (!shared.text && !shared.handle)) return { ok: false, error: 'unreadable' };
+    return { ok: true, postUrl: shared.postUrl, handle: shared.handle, name: shared.name, text: shared.text, rendered: false, images: [], videos: [], poster: shared.poster };
   }
   if (!THREADS.test(target)) return { ok: false, error: 'bad_target' };
   const post = resolve_(target);
@@ -212,40 +212,47 @@ function doPost(e) {
   }
 }
 
-/** 公開頁面才讀得到；被導向登入頁或沒有內文時回傳 null，收藏仍保留網址。 */
+/** 貼文頁會導向登入頁，但官方嵌入頁是公開的。讀不到時回傳 null 或只有網址，收藏仍保留。 */
 function resolveInstagram_(url) {
   try {
-    let current = url;
-    for (let hop = 0; hop < 4; hop++) {
-      const res = UrlFetchApp.fetch(current, { followRedirects: false, muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW,zh;q=0.9' } });
-      const code = res.getResponseCode();
-      if (code >= 300 && code < 400) {
-        const headers = res.getAllHeaders();
-        const next = headers.Location || headers.location;
-        if (!next) return null;
-        const target = next.charAt(0) === '/' ? 'https://www.instagram.com' + next : next;
-        if (!INSTAGRAM.test(target) || /\/accounts\/login/.test(target)) return null;
-        current = target;
-        continue;
-      }
-      return code === 200 ? parseInstagram_(res.getContentText(), current) : null;
-    }
-  } catch (err) { /* 取不到就只存網址 */ }
+    const post = instagramPost_(url);
+    if (!post) return null;
+    const res = UrlFetchApp.fetch(post + 'embed/captioned/', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW,zh;q=0.9' } });
+    const found = res.getResponseCode() === 200 ? parseInstagramEmbed_(res.getContentText()) : { handle: '', text: '', poster: '' };
+    return { postUrl: post, handle: found.handle, name: '', text: found.text, poster: found.poster };
+  } catch (err) {
+    return null;
+  }
+}
+
+/** 短連結轉址後取得貼文網址；登入頁的 next 參數裡也有。 */
+function instagramPost_(url) {
+  let current = url;
+  for (let hop = 0; hop < 4; hop++) {
+    const next = current.match(/[?&]next=([^&]+)/);
+    if (next) current = decodeURIComponent(next[1]);
+    if (current.charAt(0) === '/') current = 'https://www.instagram.com' + current;
+    const m = current.match(INSTAGRAM_POST);
+    if (m) return 'https://www.instagram.com/' + (m[1] === 'reels' ? 'reel' : m[1]) + '/' + m[2] + '/';
+    if (!INSTAGRAM.test(current)) return null;
+    const res = UrlFetchApp.fetch(current, { followRedirects: false, muteHttpExceptions: true, headers: { 'User-Agent': UA } });
+    const headers = res.getAllHeaders();
+    const location = headers.Location || headers.location;
+    if (!location) return null;
+    current = location;
+  }
   return null;
 }
 
-function parseInstagram_(html, current) {
-  const m = (meta_(html, 'og:url') || current).match(INSTAGRAM_POST) || current.match(INSTAGRAM_POST);
-  if (!m) return null;
-  const type = m[1] === 'reels' ? 'reel' : m[1];
-  const description = meta_(html, 'og:description');
-  const title = meta_(html, 'og:title');
-  const parts = description.match(/-\s*([A-Za-z0-9._]+)\s[^:：]*[:：]\s*["“「]([\s\S]*?)["”」]\s*\.?$/);
-  const named = title.match(/^(.+?)\s*(?:on Instagram|在 ?Instagram)[^:：]*[:：]\s*["“「]?([\s\S]*?)["”」]?$/);
+function parseInstagramEmbed_(html) {
+  const author = html.match(/class="CaptionUsername"[^>]*>([^<]+)<\/a>([\s\S]*?)<\/div>/);
+  const fallback = html.match(/class="Username"[^>]*>(?:<[^>]+>)*([A-Za-z0-9._]+)/);
+  const text = author ? decode_(author[2].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/\s*(更多|more)\s*$/i, '').trim() : '';
+  const image = html.match(/<img[^>]*class="EmbeddedMediaImage"[^>]*>/);
+  const src = image && image[0].match(/\ssrc="([^"]+)"/);
   return {
-    postUrl: 'https://www.instagram.com/' + type + '/' + m[2] + '/',
-    handle: parts ? parts[1] : '', name: named ? named[1] : '',
-    text: (parts ? parts[2] : named ? named[2] : '').slice(0, 5000), poster: '',
+    handle: author ? decode_(author[1]).trim() : fallback ? fallback[1] : '',
+    text: text.slice(0, 5000), poster: src ? decode_(src[1]) : '',
   };
 }
 
