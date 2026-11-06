@@ -10,6 +10,7 @@ const THREADS = /^https:\/\/(www\.)?threads\.(com|net)\/[^\s]+$/i;
 const POST = /^https:\/\/[^/]+\/@([^/?#]+)\/post\/([A-Za-z0-9_-]+)/;
 const MEDIA = /https:\/\/[^"'\s<>\\]*(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>\\]*/g;
 const IMAGE_HOST = /^https:\/\/[a-z0-9.-]+\.(?:cdninstagram\.com|fbcdn\.net)\//i;
+const CHUNK = 4 * 1024 * 1024;
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1';
 
 /** 在編輯器執行一次：完成授權，並確認 Google 伺服器讀得到 Threads 公開頁面。 */
@@ -54,16 +55,44 @@ function embedImages_(html) {
   return { rendered: all.length > 0, images: order.slice(0, 20).map(function (k) { return best[k].url; }) };
 }
 
+/** 影片網址。同一支影片有多種畫質，頁面通常先列最高畫質。 */
+function embedVideos_(html) {
+  const clean = html.replace(/\\u0026/g, '&').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+  const seen = {};
+  const urls = (clean.match(MEDIA) || []).filter(function (u) {
+    if (!/\.mp4/i.test(u) || seen[u]) return false;
+    seen[u] = true;
+    return true;
+  });
+  return urls.slice(0, Math.max(1, (html.match(/<video/gi) || []).length));
+}
+
+function readChunk_(target, start) {
+  if (!IMAGE_HOST.test(target)) return { ok: false, error: 'bad_target' };
+  const res = UrlFetchApp.fetch(target, { muteHttpExceptions: true, headers: { 'User-Agent': UA, Range: 'bytes=' + start + '-' + (start + CHUNK - 1) } });
+  const code = res.getResponseCode();
+  if (code !== 200 && code !== 206) return { ok: false, error: 'video_' + code };
+  const headers = res.getAllHeaders();
+  const range = String(headers['Content-Range'] || headers['content-range'] || '').match(/\/(\d+)$/);
+  const blob = res.getBlob();
+  const bytes = blob.getBytes();
+  return { ok: true, type: blob.getContentType(), total: range ? Number(range[1]) : bytes.length, data: Utilities.base64Encode(bytes) };
+}
+
 function readPost_(target) {
   if (!THREADS.test(target)) return { ok: false, error: 'bad_target' };
   const post = resolve_(target);
   if (!post) return { ok: false, error: 'unreadable' };
   let found = { rendered: false, images: [] };
+  let videos = [];
   try {
     const res = UrlFetchApp.fetch(post.postUrl + '/embed', { muteHttpExceptions: true, headers: { 'User-Agent': UA, 'Accept-Language': 'zh-TW' } });
-    if (res.getResponseCode() === 200) found = embedImages_(res.getContentText());
+    if (res.getResponseCode() === 200) {
+      found = embedImages_(res.getContentText());
+      videos = embedVideos_(res.getContentText());
+    }
   } catch (err) { /* 文字仍可使用 */ }
-  return { ok: true, postUrl: post.postUrl, handle: post.handle, name: post.name, text: post.text, rendered: found.rendered, images: found.images };
+  return { ok: true, postUrl: post.postUrl, handle: post.handle, name: post.name, text: post.text, rendered: found.rendered, images: found.images, videos: videos };
 }
 
 function readImage_(target) {
@@ -151,6 +180,7 @@ function doPost(e) {
     // 這兩項只讀 Threads，不動試算表，不需要排隊。
     if (body.action === 'readPost') return reply_(readPost_(String(body.target || '')));
     if (body.action === 'readImage') return reply_(readImage_(String(body.target || '')));
+    if (body.action === 'readChunk') return reply_(readChunk_(String(body.target || ''), Math.max(0, Number(body.start) || 0)));
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
