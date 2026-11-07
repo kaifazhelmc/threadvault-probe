@@ -183,6 +183,17 @@ function reply_(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/** 書籤按鈕用的小視窗；只顯示結果後自動關閉，不回傳任何收件匣資料。 */
+function bookmarkReply_(data) {
+  const ok = !!data.ok;
+  const title = ok ? '已傳送到脆藏' : '傳送失敗';
+  const detail = ok ? 'iPhone 開啟脆藏並同步後會自動處理。' : '請確認這是 Threads、Instagram 或 Facebook 貼文，再試一次。';
+  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' + title + '</title>' +
+    '<body style="font:16px -apple-system,system-ui,sans-serif;margin:0;padding:28px;background:#f3f6f4;color:#17221f;text-align:center"><h1 style="font-size:20px">' + title +
+    '</h1><p>' + detail + '</p><button onclick="close()" style="padding:10px 18px;border:0;border-radius:999px;background:#176b5b;color:white">關閉</button>' +
+    (ok ? '<script>setTimeout(function(){close()},1200)<\/script>' : '') + '</body>');
+}
+
 function doGet() {
   return reply_({ ok: false, error: 'POST only' });
 }
@@ -191,7 +202,8 @@ function doPost(e) {
   try {
     const raw = e && e.postData ? e.postData.contents : '';
     if (!raw || raw.length > MAX_BODY) return reply_({ ok: false, error: 'bad_request' });
-    const body = JSON.parse(raw);
+    // App 直接送 JSON；跨電腦書籤用一般表單送 payload，避開社群網站的跨網域限制。
+    const body = e && e.parameter && e.parameter.payload ? JSON.parse(e.parameter.payload) : JSON.parse(raw);
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return reply_({ ok: false, error: 'forbidden' });
     // 這兩項只讀 Threads，不動試算表，不需要排隊。
@@ -205,7 +217,8 @@ function doPost(e) {
     try {
       if (body.action === 'list') return reply_(list_());
       if (body.action === 'ack') return reply_(ack_(body.ids));
-      return reply_(add_(body));
+      const added = add_(body);
+      return body.source === 'bookmark' ? bookmarkReply_(added) : reply_(added);
     } finally {
       lock.releaseLock();
     }
