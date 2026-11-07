@@ -194,7 +194,25 @@ function bookmarkReply_(data) {
     (ok ? '<script>setTimeout(function(){close()},1200)<\/script>' : '') + '</body>');
 }
 
-function doGet() {
+/**
+ * 書籤小視窗先在 Apps Script 自己的頁面裡送出 POST。
+ * IG／FB／Threads 常用 CSP 阻擋跨站 form-action，不能直接從社群頁送表單。
+ * payload 放在網址 fragment，不會隨 GET 傳到伺服器；小視窗送出後立即離開／關閉。
+ */
+function bookmarkRelay_() {
+  const action = JSON.stringify(ScriptApp.getService().getUrl());
+  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
+    '<title>傳送到脆藏</title><body style="font:16px -apple-system,system-ui,sans-serif;margin:0;padding:28px;background:#f3f6f4;color:#17221f;text-align:center">' +
+    '<p id="status">正在傳送到脆藏…</p><script>try{' +
+    'var payload=decodeURIComponent(location.hash.slice(1));if(!payload)throw new Error();' +
+    'history.replaceState(null,"",location.pathname+location.search);' +
+    'var f=document.createElement("form"),x=document.createElement("input");f.method="post";f.action=' + action + ';' +
+    'x.name="payload";x.value=payload;f.appendChild(x);document.body.appendChild(f);f.submit();' +
+    '}catch(e){document.getElementById("status").textContent="傳送資料無效，請重新安裝書籤按鈕。"}<\/script></body>');
+}
+
+function doGet(e) {
+  if (e && e.parameter && e.parameter.bookmark === '1') return bookmarkRelay_();
   return reply_({ ok: false, error: 'POST only' });
 }
 
