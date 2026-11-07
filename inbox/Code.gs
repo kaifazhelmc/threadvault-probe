@@ -8,6 +8,8 @@ const MAX_ROWS = 5000;
 const HEADERS = ['id', 'receivedAt', 'url', 'note', 'status', 'category', 'postUrl', 'handle', 'name', 'text'];
 const THREADS = /^https:\/\/(www\.)?threads\.(com|net)\/[^\s]+$/i;
 const INSTAGRAM = /^https:\/\/(www\.|m\.)?instagram\.com\/[^\s]+$/i;
+// Facebook 幾乎都要登入才看得到，只收網址，內容交給 App 裡登入的 Facebook 讀。
+const FACEBOOK = /^https:\/\/((www|m|web|mbasic|touch)\.)?(facebook|fb)\.com\/[^\s]+$|^https:\/\/fb\.watch\/[^\s]+$/i;
 const INSTAGRAM_POST = /^https:\/\/[^/]+\/(?:[A-Za-z0-9._]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i;
 const POST = /^https:\/\/[^/]+\/@([^/?#]+)\/post\/([A-Za-z0-9_-]+)/;
 const MEDIA = /https:\/\/[^"'\s<>\\]*(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>\\]*/g;
@@ -293,13 +295,14 @@ function parseInstagramEmbed_(html) {
 function add_(body) {
   const url = String(body.url || '').trim();
   const instagram = INSTAGRAM.test(url);
-  if (!THREADS.test(url) && !instagram) return reply_payload_('not_threads');
+  const facebook = FACEBOOK.test(url);
+  if (!THREADS.test(url) && !instagram && !facebook) return reply_payload_('not_threads');
   const sheet = inbox_();
   if (sheet.getLastRow() > MAX_ROWS) return reply_payload_('inbox_full');
   const id = Utilities.getUuid();
   const receivedAt = new Date().toISOString();
   // safe_ 在開頭加單引號，避免內容被試算表當成公式執行。
-  const post = (instagram ? resolveInstagram_(url) : resolve_(url)) || {};
+  const post = (facebook ? null : instagram ? resolveInstagram_(url) : resolve_(url)) || {};
   sheet.appendRow([id, receivedAt, safe_(url), safe_(String(body.note || '').slice(0, 2000)), 'pending',
     safe_(String(body.category || '').slice(0, 100)), safe_(post.postUrl || ''), safe_(post.handle || ''), safe_(post.name || ''), safe_(post.text || '')]);
   return { ok: true, id: id, receivedAt: receivedAt, resolved: !!post.postUrl };
